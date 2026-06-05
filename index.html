@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>파트너 협력 관제 대시보드</title>
+<style>
+  html, body, #root { margin: 0; padding: 0; height: 100%; background: #0c0e13; }
+</style>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+/* ============================================================
+   파트너 협력 관리 대시보드 (Partner Collaboration Cockpit)
+   - 파트너사 / 협력 Item / 마일스톤 / 진척 / 이슈 통합 관리
+   - 데이터는 브라우저 localStorage 에 저장되어 세션 간 유지됩니다.
+   ============================================================ */
+
+// ---------- 디자인 토큰 ----------
+const C = {
+  bg: "#0c0e13",
+  bgGrad: "radial-gradient(1200px 600px at 85% -10%, #15202e 0%, rgba(12,14,19,0) 55%), radial-gradient(900px 500px at -5% 110%, #161320 0%, rgba(12,14,19,0) 50%), #0c0e13",
+  panel: "#14171f",
+  panel2: "#1a1e28",
+  panel3: "#212732",
+  border: "#272d39",
+  borderSoft: "#1f2530",
+  text: "#e8ebf2",
+  sub: "#9aa3b4",
+  faint: "#6b7384",
+  brand: "#45d6c8",
+  brandDim: "rgba(69,214,200,0.12)",
+};
+
+const STATUS = {
+  done:    { ko: "완료",   c: "#3ecf8e", bg: "rgba(62,207,142,0.13)" },
+  active:  { ko: "진행중", c: "#5b9cff", bg: "rgba(91,156,255,0.13)" },
+  planned: { ko: "예정",   c: "#8a93a3", bg: "rgba(138,147,163,0.13)" },
+  delayed: { ko: "지연",   c: "#f5a623", bg: "rgba(245,166,35,0.13)" },
+  risk:    { ko: "위험",   c: "#f0596a", bg: "rgba(240,89,106,0.13)" },
+};
+const SEV = {
+  high:   { ko: "High",   c: "#f0596a" },
+  medium: { ko: "Medium", c: "#f5a623" },
+  low:    { ko: "Low",    c: "#5b9cff" },
+};
+const ISSUE_STATUS = {
+  open:        { ko: "Open",        c: "#f0596a" },
+  in_progress: { ko: "In Progress", c: "#5b9cff" },
+  resolved:    { ko: "Resolved",    c: "#3ecf8e" },
+};
+
+const GROUP_META = {
+  OTT:   { label: "OTT",   c: "#5b9cff" },
+  Game:  { label: "GAME",  c: "#a78bfa" },
+  Music: { label: "MUSIC", c: "#3ecf8e" },
+  AI:    { label: "AI",    c: "#45d6c8" },
+};
+const GROUP_ORDER = ["OTT", "Game", "Music", "AI"];
+
+const MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace";
+const SANS = "'Pretendard', -apple-system, system-ui, sans-serif";
+
+// ---------- 시드 데이터 ----------
+const SEED = [
+  // ===== OTT =====
+  {
+    id: "p1", name: "Disney+", group: "OTT", tier: "Tier 1", category: "OTT / VOD",
+    owner: "김지훈", health: "active",
+    items: [
+      { id: "i1", title: "AV1 + HDR10 4K 재생 인증", owner: "박서연", status: "active", progress: 70,
+        milestones: [
+          { id: "m1", title: "코덱 호환성 사전 검증", date: "2026-03-15", status: "done" },
+          { id: "m2", title: "Dolby Vision 패스스루 연동", date: "2026-04-20", status: "done" },
+          { id: "m3", title: "HDR10 톤매핑 QA", date: "2026-06-18", status: "active" },
+          { id: "m4", title: "전 모델 인증 통과", date: "2026-08-10", status: "planned" },
+        ],
+      },
+      { id: "i2", title: "차세대 앱 UI SDK 통합", owner: "이도윤", status: "active", progress: 45,
+        milestones: [
+          { id: "m5", title: "SDK 스펙 합의", date: "2026-04-05", status: "done" },
+          { id: "m6", title: "런처 딥링크 연동", date: "2026-06-25", status: "active" },
+          { id: "m7", title: "성능 벤치마크", date: "2026-08-20", status: "planned" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "p2", name: "HBO Max", group: "OTT", tier: "Tier 1", category: "OTT / VOD",
+    owner: "정민재", health: "active",
+    items: [
+      { id: "i3", title: "Max 앱 4K HDR 런칭", owner: "최유진", status: "active", progress: 60,
+        milestones: [
+          { id: "m8", title: "앱 탑재 협의", date: "2026-03-28", status: "done" },
+          { id: "m9", title: "DRM(Widevine L1) 검증", date: "2026-05-15", status: "done" },
+          { id: "m10", title: "4K HDR 스트림 QA", date: "2026-07-10", status: "active" },
+          { id: "m11", title: "상용 배포", date: "2026-09-01", status: "planned" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "p3", name: "TVING", group: "OTT", tier: "Tier 1", category: "국내 OTT",
+    owner: "한소희", health: "active",
+    items: [
+      { id: "i4", title: "실시간 스포츠 저지연 스트리밍", owner: "오세훈", status: "active", progress: 80,
+        milestones: [
+          { id: "m12", title: "LL-HLS 프로토콜 합의", date: "2026-03-10", status: "done" },
+          { id: "m13", title: "저지연 버퍼 최적화", date: "2026-05-05", status: "done" },
+          { id: "m14", title: "멀티 비트레이트 QA", date: "2026-06-15", status: "active" },
+          { id: "m15", title: "KBO 시즌 상용 적용", date: "2026-07-20", status: "planned" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "p4", name: "Wavve", group: "OTT", tier: "Tier 2", category: "국내 OTT",
+    owner: "윤하늘", health: "delayed",
+    items: [
+      { id: "i5", title: "VP9 + 광고(SSAI) SDK 연동", owner: "강민서", status: "delayed", progress: 35,
+        milestones: [
+          { id: "m16", title: "SDK 라이선스 협의", date: "2026-04-12", status: "done" },
+          { id: "m17", title: "서버사이드 광고 삽입 연동", date: "2026-06-05", status: "delayed" },
+          { id: "m18", title: "성능 벤치마크", date: "2026-08-15", status: "planned" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "p5", name: "Coupang Play", group: "OTT", tier: "Tier 2", category: "OTT / 스포츠",
+    owner: "서지안", health: "planned",
+    items: [
+      { id: "i6", title: "라이브 스포츠 멀티뷰", owner: "임도현", status: "planned", progress: 15,
+        milestones: [
+          { id: "m19", title: "멀티뷰 UX 규격 정의", date: "2026-06-30", status: "active" },
+          { id: "m20", title: "동시 디코딩 PoC", date: "2026-08-25", status: "planned" },
+          { id: "m21", title: "베타 검증", date: "2026-10-10", status: "planned" },
+        ],
+      },
+    ],
+  },
+  // ===== GAME =====
+  {
+    id: "p6", name: "Xbox Cloud Gaming", group: "Game", tier: "Tier 1", category: "클라우드 게임",
+    owner: "노준영", health: "active",
+    items: [
+      { id: "i7", title: "Game Pass 앱 탑재 & 컨트롤러 연동", owner: "백하은", status: "active", progress: 55,
+        milestones: [
+          { id: "m22", title: "앱 탑재 계약", date: "2026-03-20", status: "done" },
+          { id: "m23", title: "BT 컨트롤러 입력 매핑", date: "2026-05-30", status: "done" },
+          { id: "m24", title: "저지연 스트리밍 QA", date: "2026-07-15", status: "active" },
+          { id: "m25", title: "정식 출시", date: "2026-09-20", status: "planned" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "p7", name: "NVIDIA GeForce NOW", group: "Game", tier: "Tier 2", category: "클라우드 게임",
+    owner: "구태양", health: "risk",
+    items: [
+      { id: "i8", title: "GeForce NOW 4K 120Hz 스트리밍", owner: "황시우", status: "risk", progress: 40,
+        milestones: [
+          { id: "m26", title: "VRR / 120Hz 패널 호환 검증", date: "2026-04-18", status: "done" },
+          { id: "m27", title: "네트워크 지연 최적화", date: "2026-06-10", status: "risk" },
+          { id: "m28", title: "전 모델 호환성 QA", date: "2026-08-30", status: "planned" },
+        ],
+      },
+    ],
+  },
+  // ===== MUSIC =====
+  {
+    id: "p8", name: "Spotify", group: "Music", tier: "Tier 1", category: "오디오 / 음악",
+    owner: "조은별", health: "active",
+    items: [
+      { id: "i9", title: "Spotify Connect v3 & 가사 동기화", owner: "남궁민", status: "active", progress: 75,
+        milestones: [
+          { id: "m29", title: "Connect v3 핸드셰이크 연동", date: "2026-03-25", status: "done" },
+          { id: "m30", title: "실시간 가사 동기화", date: "2026-05-20", status: "done" },
+          { id: "m31", title: "Ambient/홈 위젯 연동", date: "2026-06-28", status: "active" },
+          { id: "m32", title: "상용 배포", date: "2026-08-05", status: "planned" },
+        ],
+      },
+    ],
+  },
+  // ===== AI =====
+  {
+    id: "p9", name: "Glace AI", group: "AI", tier: "Tier 2", category: "AI / 생성형",
+    owner: "유하준", health: "planned",
+    items: [
+      { id: "i10", title: "온디바이스 AI 콘텐츠 추천 연동", owner: "신아윤", status: "planned", progress: 20,
+        milestones: [
+          { id: "m33", title: "추천 API 스펙 정의", date: "2026-06-15", status: "active" },
+          { id: "m34", title: "온디바이스 추론 PoC", date: "2026-08-10", status: "planned" },
+          { id: "m35", title: "프라이버시 검토", date: "2026-09-30", status: "planned" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "p10", name: "Microsoft Copilot", group: "AI", tier: "Tier 1", category: "AI / 어시스턴트",
+    owner: "전우진", health: "active",
+    items: [
+      { id: "i11", title: "Copilot 음성 어시스턴트 통합", owner: "권나래", status: "active", progress: 50,
+        milestones: [
+          { id: "m36", title: "음성 인텐트 연동 규격", date: "2026-04-08", status: "done" },
+          { id: "m37", title: "TV 제어 액션 매핑", date: "2026-06-22", status: "active" },
+          { id: "m38", title: "다국어 음성 QA", date: "2026-08-18", status: "planned" },
+          { id: "m39", title: "정식 탑재", date: "2026-10-05", status: "planned" },
+        ],
+      },
+    ],
+  },
+];
+
+const SEED_ISSUES = [
+  { id: "is1", partner: "Disney+", item: "AV1 + HDR10 4K 재생 인증", title: "2021년 이전 모델에서 HDR10 메타데이터 누락", sev: "high", status: "open", owner: "박서연", due: "2026-06-18" },
+  { id: "is2", partner: "NVIDIA GeForce NOW", item: "GeForce NOW 4K 120Hz 스트리밍", title: "120Hz VRR 전환 시 일부 패널에서 깜빡임", sev: "high", status: "in_progress", owner: "황시우", due: "2026-06-13" },
+  { id: "is3", partner: "Wavve", item: "VP9 + 광고(SSAI) SDK 연동", title: "광고 삽입 후 본편 복귀 시 싱크 틀어짐", sev: "high", status: "open", owner: "강민서", due: "2026-06-10" },
+  { id: "is4", partner: "Xbox Cloud Gaming", item: "Game Pass 앱 탑재 & 컨트롤러 연동", title: "절전 모드 복귀 후 컨트롤러 재페어링 지연", sev: "medium", status: "in_progress", owner: "백하은", due: "2026-06-24" },
+  { id: "is5", partner: "Spotify", item: "Spotify Connect v3 & 가사 동기화", title: "가사 동기화 오차 약 300ms", sev: "medium", status: "open", owner: "남궁민", due: "2026-06-20" },
+  { id: "is6", partner: "HBO Max", item: "Max 앱 4K HDR 런칭", title: "Widevine L1 인증서 갱신 누락 경고", sev: "low", status: "in_progress", owner: "최유진", due: "2026-06-27" },
+  { id: "is7", partner: "TVING", item: "실시간 스포츠 저지연 스트리밍", title: "피크 트래픽 시 초기 버퍼링 증가", sev: "low", status: "resolved", owner: "오세훈", due: "2026-05-28" },
+];
+
+// ---------- 저장소 ----------
+const KEY_P = "pc:partners:v2";
+const KEY_I = "pc:issues:v2";
+
+function loadKey(key, fallback) {
+  try {
+    const r = localStorage.getItem(key);
+    return r ? JSON.parse(r) : fallback;
+  } catch (e) { return fallback; }
+}
+function saveKey(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
+}
+
+// ---------- 작은 UI 컴포넌트 ----------
+function Pill({ s, map = STATUS, small }) {
+  const m = map[s] || STATUS.planned;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      fontFamily: MONO, fontSize: small ? 10 : 11, fontWeight: 600,
+      color: m.c, background: m.bg || "transparent",
+      padding: small ? "2px 7px" : "3px 9px", borderRadius: 6,
+      border: `1px solid ${m.c}33`, letterSpacing: 0.3, whiteSpace: "nowrap",
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 99, background: m.c, boxShadow: `0 0 6px ${m.c}` }} />
+      {m.ko}
+    </span>
+  );
+}
+
+function Progress({ v, c = C.brand }) {
+  return (
+    <div style={{ flex: 1, minWidth: 60 }}>
+      <div style={{ height: 6, borderRadius: 99, background: "#0e1117", overflow: "hidden", border: `1px solid ${C.borderSoft}` }}>
+        <div style={{ width: `${v}%`, height: "100%", background: `linear-gradient(90deg, ${c}, ${c}aa)`, borderRadius: 99, transition: "width .4s cubic-bezier(.2,.8,.2,1)" }} />
+      </div>
+    </div>
+  );
+}
+
+function Panel({ children, style }) {
+  return (
+    <div style={{
+      background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14,
+      boxShadow: "0 1px 0 rgba(255,255,255,0.02) inset, 0 14px 40px -20px rgba(0,0,0,0.6)",
+      ...style,
+    }}>{children}</div>
+  );
+}
+
+// ---------- KPI ----------
+function Kpi({ label, value, accent, sub }) {
+  return (
+    <Panel style={{ padding: "16px 18px", flex: 1, minWidth: 150, position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${accent}14, transparent 55%)` }} />
+      <div style={{ position: "relative" }}>
+        <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 1.2, color: C.faint, textTransform: "uppercase" }}>{label}</div>
+        <div style={{ fontFamily: MONO, fontSize: 34, fontWeight: 700, color: C.text, marginTop: 6, lineHeight: 1 }}>
+          {value}
+        </div>
+        {sub && <div style={{ fontSize: 12, color: accent, marginTop: 8, fontWeight: 600 }}>{sub}</div>}
+        <div style={{ position: "absolute", top: -4, right: -4, width: 30, height: 30, borderRadius: 8, background: accent, opacity: 0.18 }} />
+      </div>
+    </Panel>
+  );
+}
+
+// ============================================================
+function App() {
+  const [partners, setPartners] = useState(null);
+  const [issues, setIssues] = useState(null);
+  const [tab, setTab] = useState("overview");
+  const [openItem, setOpenItem] = useState(null); // {partnerId, itemId}
+  const [issueFilter, setIssueFilter] = useState("all");
+  const [showAddIssue, setShowAddIssue] = useState(false);
+  const [catFilter, setCatFilter] = useState("all"); // all | OTT | Game | Music | AI
+
+  useEffect(() => {
+    (async () => {
+      setPartners(await loadKey(KEY_P, SEED));
+      setIssues(await loadKey(KEY_I, SEED_ISSUES));
+    })();
+  }, []);
+
+  useEffect(() => { if (partners) saveKey(KEY_P, partners); }, [partners]);
+  useEffect(() => { if (issues) saveKey(KEY_I, issues); }, [issues]);
+
+  // ----- 파생 통계 (카테고리 필터 반영) -----
+  const stats = useMemo(() => {
+    if (!partners || !issues) return null;
+    const catByName = {};
+    partners.forEach(p => { catByName[p.name] = p.group; });
+    const vp = catFilter === "all" ? partners : partners.filter(p => p.group === catFilter);
+    const vi = catFilter === "all" ? issues : issues.filter(i => catByName[i.partner] === catFilter);
+    const allItems = vp.flatMap(p => p.items);
+    const allMs = allItems.flatMap(i => i.milestones);
+    return {
+      partners: vp.length,
+      activeItems: allItems.filter(i => i.status === "active").length,
+      totalItems: allItems.length,
+      delayedMs: allMs.filter(m => m.status === "delayed" || m.status === "risk").length,
+      doneMs: allMs.filter(m => m.status === "done").length,
+      totalMs: allMs.length,
+      openIssues: vi.filter(i => i.status !== "resolved").length,
+      highIssues: vi.filter(i => i.sev === "high" && i.status !== "resolved").length,
+      avgProgress: allItems.length ? Math.round(allItems.reduce((a, i) => a + i.progress, 0) / allItems.length) : 0,
+    };
+  }, [partners, issues, catFilter]);
+
+  if (!partners || !issues || !stats) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, color: C.sub, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SANS }}>
+        대시보드 불러오는 중…
+      </div>
+    );
+  }
+
+  // ----- 카테고리 필터 적용된 가시 데이터 -----
+  const catByName = {};
+  partners.forEach(p => { catByName[p.name] = p.group; });
+  const visiblePartners = catFilter === "all" ? partners : partners.filter(p => p.group === catFilter);
+  const visibleIssues = catFilter === "all" ? issues : issues.filter(i => catByName[i.partner] === catFilter);
+  const catLabel = catFilter === "all" ? "전체" : (GROUP_META[catFilter]?.label || catFilter);
+
+  // ----- 마일스톤 상태 변경 -----
+  const setMilestoneStatus = (partnerId, itemId, msId, status) => {
+    setPartners(prev => prev.map(p => p.id !== partnerId ? p : {
+      ...p, items: p.items.map(it => it.id !== itemId ? it : {
+        ...it, milestones: it.milestones.map(m => m.id !== msId ? m : { ...m, status }),
+      }),
+    }));
+  };
+  const setItemProgress = (partnerId, itemId, progress) => {
+    setPartners(prev => prev.map(p => p.id !== partnerId ? p : {
+      ...p, items: p.items.map(it => it.id !== itemId ? it : { ...it, progress }),
+    }));
+  };
+  const setItemStatus = (partnerId, itemId, status) => {
+    setPartners(prev => prev.map(p => p.id !== partnerId ? p : {
+      ...p, items: p.items.map(it => it.id !== itemId ? it : { ...it, status }),
+    }));
+  };
+
+  const upcoming = visiblePartners.flatMap(p => p.items.flatMap(i => i.milestones
+    .filter(m => m.status !== "done")
+    .map(m => ({ ...m, partner: p.name, item: i.title }))))
+    .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+
+  const TABS = [
+    { id: "overview", label: "개요" },
+    { id: "partners", label: "협력 Item" },
+    { id: "issues", label: "이슈 트래커" },
+    { id: "timeline", label: "마일스톤 타임라인" },
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bgGrad, color: C.text, fontFamily: SANS }}>
+      <FontStyles />
+
+      {/* 헤더 */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "20px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16, position: "sticky", top: 0, zIndex: 30, background: "rgba(12,14,19,0.85)", backdropFilter: "blur(12px)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg, ${C.brand}, #2f8f86)`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 24px ${C.brand}55` }}>
+            <div style={{ width: 16, height: 16, border: "2.5px solid #07120f", borderRadius: 4 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3 }}>파트너 협력 관제 대시보드</div>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint, letterSpacing: 0.5 }}>PARTNER COLLABORATION COCKPIT</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint }}>{catLabel} 평균 진척</div>
+            <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 700, color: C.brand }}>{stats.avgProgress}%</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: MONO, fontSize: 11, color: C.sub, padding: "6px 12px", border: `1px solid ${C.border}`, borderRadius: 99 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: "#3ecf8e", boxShadow: "0 0 8px #3ecf8e" }} />LIVE
+          </div>
+        </div>
+      </div>
+
+      {/* KPI 스트립 */}
+      <div style={{ display: "flex", gap: 14, padding: "22px 28px 0", flexWrap: "wrap" }}>
+        <Kpi label="파트너사" value={stats.partners} accent={C.brand} sub={`협력 Item ${stats.totalItems}건`} />
+        <Kpi label="진행중 Item" value={stats.activeItems} accent="#5b9cff" sub={`전체 ${stats.totalItems}건 중`} />
+        <Kpi label="완료 마일스톤" value={`${stats.doneMs}/${stats.totalMs}`} accent="#3ecf8e" sub={`${Math.round(stats.doneMs / stats.totalMs * 100)}% 달성`} />
+        <Kpi label="지연·위험" value={stats.delayedMs} accent="#f5a623" sub="마일스톤 주의 필요" />
+        <Kpi label="오픈 이슈" value={stats.openIssues} accent="#f0596a" sub={`High ${stats.highIssues}건 포함`} />
+      </div>
+
+      {/* 카테고리 필터 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "20px 28px 0", flexWrap: "wrap" }}>
+        <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 1, color: C.faint, textTransform: "uppercase" }}>Category</span>
+        {[["all", "전체", C.brand], ...GROUP_ORDER.map(g => [g, GROUP_META[g].label, GROUP_META[g].c])].map(([v, l, c]) => {
+          const on = catFilter === v;
+          return (
+            <button key={v} onClick={() => setCatFilter(v)} style={{
+              cursor: "pointer", padding: "6px 14px", borderRadius: 99, fontSize: 12.5, fontWeight: 700, fontFamily: MONO,
+              display: "inline-flex", alignItems: "center", gap: 7,
+              background: on ? `${c}22` : "transparent",
+              border: `1px solid ${on ? c : C.border}`,
+              color: on ? c : C.faint, transition: "all .15s",
+            }}>
+              {v !== "all" && <span style={{ width: 7, height: 7, borderRadius: 2, background: c }} />}
+              {l}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 탭 */}
+      <div style={{ display: "flex", gap: 4, padding: "22px 28px 0", borderBottom: `1px solid ${C.border}`, marginTop: 22 }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            background: "none", border: "none", cursor: "pointer", padding: "10px 16px 14px",
+            fontFamily: SANS, fontSize: 14, fontWeight: 600,
+            color: tab === t.id ? C.text : C.faint,
+            borderBottom: `2px solid ${tab === t.id ? C.brand : "transparent"}`,
+            transition: "color .2s", marginBottom: -1,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: "26px 28px 60px", maxWidth: 1280, margin: "0 auto" }}>
+        {tab === "overview" && <Overview partners={visiblePartners} issues={visibleIssues} upcoming={upcoming} stats={stats} onOpen={(pid, iid) => { setTab("partners"); setOpenItem({ partnerId: pid, itemId: iid }); }} />}
+        {tab === "partners" && <Partners partners={visiblePartners} onOpen={setOpenItem} />}
+        {tab === "issues" && <Issues issues={visibleIssues} setIssues={setIssues} filter={issueFilter} setFilter={setIssueFilter} showAdd={showAddIssue} setShowAdd={setShowAddIssue} partners={partners} catByName={catByName} />}
+        {tab === "timeline" && <Timeline partners={visiblePartners} />}
+      </div>
+
+      {/* Item 상세 드로어 */}
+      {openItem && (
+        <ItemDrawer
+          partners={partners} sel={openItem} onClose={() => setOpenItem(null)}
+          issues={issues}
+          setMilestoneStatus={setMilestoneStatus} setItemProgress={setItemProgress} setItemStatus={setItemStatus}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================ 개요
+function Overview({ partners, issues, upcoming, stats, onOpen }) {
+  const dist = Object.keys(STATUS).map(k => ({
+    k, ...STATUS[k],
+    n: partners.flatMap(p => p.items).filter(i => i.status === k).length,
+  }));
+  const totalItems = stats.totalItems || 1;
+  const recentIssues = [...issues].filter(i => i.status !== "resolved")
+    .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.sev] - { high: 0, medium: 1, low: 2 }[b.sev])).slice(0, 5);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 18 }}>
+      {/* 진행 상태 분포 */}
+      <Panel style={{ padding: 22, gridColumn: "1 / 2" }}>
+        <SectionTitle>협력 Item 진행 상태</SectionTitle>
+        <div style={{ display: "flex", height: 12, borderRadius: 8, overflow: "hidden", marginTop: 16, border: `1px solid ${C.borderSoft}` }}>
+          {dist.filter(d => d.n > 0).map(d => (
+            <div key={d.k} title={`${d.ko} ${d.n}`} style={{ width: `${d.n / totalItems * 100}%`, background: d.c }} />
+          ))}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 16 }}>
+          {dist.map(d => (
+            <div key={d.k} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 3, background: d.c }} />
+              <span style={{ fontSize: 13, color: C.sub }}>{d.ko}</span>
+              <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, color: C.text }}>{d.n}</span>
+            </div>
+          ))}
+        </div>
+
+        <SectionTitle style={{ marginTop: 28 }}>카테고리 · 파트너사별 진척</SectionTitle>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 16 }}>
+          {GROUP_ORDER.map(g => {
+            const list = partners.filter(p => p.group === g);
+            if (!list.length) return null;
+            const meta = GROUP_META[g];
+            return (
+              <div key={g}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: meta.c }} />
+                  <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: 1, color: meta.c }}>{meta.label}</span>
+                  <div style={{ flex: 1, height: 1, background: C.borderSoft }} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {list.map(p => {
+                    const avg = Math.round(p.items.reduce((a, i) => a + i.progress, 0) / p.items.length);
+                    return (
+                      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                        <div style={{ width: 120, flexShrink: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 700 }}>{p.name}</div>
+                          <div style={{ fontFamily: MONO, fontSize: 10.5, color: C.faint }}>{p.tier}</div>
+                        </div>
+                        <Progress v={avg} c={STATUS[p.health].c} />
+                        <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, width: 42, textAlign: "right", color: STATUS[p.health].c }}>{avg}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+
+      {/* 다가오는 마일스톤 */}
+      <Panel style={{ padding: 22 }}>
+        <SectionTitle>다가오는 마일스톤</SectionTitle>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 2 }}>
+          {upcoming.map(m => (
+            <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: C.brand, width: 64, flexShrink: 0 }}>{m.date.slice(5)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.title}</div>
+                <div style={{ fontSize: 11, color: C.faint }}>{m.partner}</div>
+              </div>
+              <Pill s={m.status} small />
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      {/* 주요 이슈 */}
+      <Panel style={{ padding: 22, gridColumn: "1 / 3" }}>
+        <SectionTitle>우선 대응 이슈</SectionTitle>
+        <div style={{ marginTop: 12 }}>
+          {recentIssues.map(it => (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: `1px solid ${C.borderSoft}` }}>
+              <span style={{ width: 8, height: 8, borderRadius: 99, background: SEV[it.sev].c, flexShrink: 0, boxShadow: `0 0 8px ${SEV[it.sev].c}` }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.title}</div>
+                <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint }}>{it.partner} · {it.item}</div>
+              </div>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: SEV[it.sev].c, fontWeight: 700, width: 56 }}>{SEV[it.sev].ko}</span>
+              <Pill s={it.status} map={ISSUE_STATUS} small />
+            </div>
+          ))}
+          {recentIssues.length === 0 && <div style={{ color: C.faint, fontSize: 13, padding: 12 }}>오픈된 이슈가 없습니다. 👍</div>}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+// ============================================================ 파트너 / Item
+function Partners({ partners, onOpen }) {
+  const order = ["OTT", "Game", "Music", "AI"];
+  const groups = order
+    .map(g => ({ g, list: partners.filter(p => (p.group || "기타") === g) }))
+    .filter(x => x.list.length > 0);
+  // 그룹 미지정 파트너 보강
+  const ungrouped = partners.filter(p => !order.includes(p.group));
+  if (ungrouped.length) groups.push({ g: "기타", list: ungrouped });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 30 }}>
+      {groups.map(({ g, list }) => {
+        const meta = GROUP_META[g] || { label: g, c: C.faint };
+        return (
+          <div key={g}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: meta.c, boxShadow: `0 0 10px ${meta.c}` }} />
+              <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, letterSpacing: 1.5, color: C.text }}>{meta.label}</span>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: C.faint }}>{list.length} 파트너</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 18 }}>
+              {list.map(p => <PartnerCard key={p.id} p={p} accent={meta.c} onOpen={onOpen} />)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PartnerCard({ p, accent, onOpen }) {
+  return (
+    <Panel style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${accent}, transparent)` }} />
+      <div style={{ padding: "16px 20px 14px", borderBottom: `1px solid ${C.borderSoft}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16, fontWeight: 800 }}>{p.name}</span>
+            <Pill s={p.health} small />
+          </div>
+          <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint, marginTop: 4 }}>{p.tier} · {p.category}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 11, color: C.faint }}>담당</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{p.owner}</div>
+        </div>
+      </div>
+      <div style={{ padding: "8px 12px 14px" }}>
+        {p.items.map(it => {
+          const done = it.milestones.filter(m => m.status === "done").length;
+          return (
+            <button key={it.id} onClick={() => onOpen({ partnerId: p.id, itemId: it.id })} style={{
+              width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer",
+              padding: "12px 8px", borderRadius: 10, display: "block", transition: "background .15s",
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = C.panel2}
+              onMouseLeave={e => e.currentTarget.style.background = "none"}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text, flex: 1 }}>{it.title}</span>
+                <Pill s={it.status} small />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 9 }}>
+                <Progress v={it.progress} c={STATUS[it.status].c} />
+                <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.sub, width: 38, textAlign: "right" }}>{it.progress}%</span>
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 10.5, color: C.faint, marginTop: 7 }}>
+                마일스톤 {done}/{it.milestones.length} · 담당 {it.owner}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
+// ============================================================ Item 상세 드로어
+function ItemDrawer({ partners, sel, onClose, issues, setMilestoneStatus, setItemProgress, setItemStatus }) {
+  const p = partners.find(x => x.id === sel.partnerId);
+  const it = p?.items.find(x => x.id === sel.itemId);
+  if (!it) return null;
+  const linked = issues.filter(i => i.partner === p.name && i.item === it.title);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(4,6,10,0.6)", backdropFilter: "blur(3px)", zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "min(560px, 100%)", height: "100%", background: C.panel, borderLeft: `1px solid ${C.border}`,
+        overflowY: "auto", animation: "slideIn .28s cubic-bezier(.2,.8,.2,1)",
+      }}>
+        <div style={{ padding: "22px 24px", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, background: C.panel, zIndex: 2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: C.brand, letterSpacing: 0.5 }}>{p.name} · {p.category}</div>
+              <div style={{ fontSize: 19, fontWeight: 800, marginTop: 5 }}>{it.title}</div>
+            </div>
+            <button onClick={onClose} style={{ background: C.panel2, border: `1px solid ${C.border}`, color: C.sub, width: 32, height: 32, borderRadius: 8, cursor: "pointer", fontSize: 16, flexShrink: 0 }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ padding: 24 }}>
+          {/* 상태 + 진척 편집 */}
+          <SectionTitle>상태 / 진척 관리</SectionTitle>
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            {Object.keys(STATUS).map(s => (
+              <button key={s} onClick={() => setItemStatus(p.id, it.id, s)} style={{
+                cursor: "pointer", padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                fontFamily: MONO, background: it.status === s ? STATUS[s].bg : "transparent",
+                border: `1px solid ${it.status === s ? STATUS[s].c : C.border}`,
+                color: it.status === s ? STATUS[s].c : C.faint,
+              }}>{STATUS[s].ko}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16 }}>
+            <input type="range" min="0" max="100" step="5" value={it.progress}
+              onChange={e => setItemProgress(p.id, it.id, Number(e.target.value))}
+              style={{ flex: 1, accentColor: C.brand }} />
+            <span style={{ fontFamily: MONO, fontSize: 20, fontWeight: 700, color: C.brand, width: 58, textAlign: "right" }}>{it.progress}%</span>
+          </div>
+
+          {/* 마일스톤 타임라인 */}
+          <SectionTitle style={{ marginTop: 30 }}>마일스톤</SectionTitle>
+          <div style={{ marginTop: 16, position: "relative", paddingLeft: 6 }}>
+            <div style={{ position: "absolute", left: 12, top: 4, bottom: 4, width: 2, background: C.border }} />
+            {it.milestones.map((m, idx) => (
+              <div key={m.id} style={{ position: "relative", paddingLeft: 32, paddingBottom: idx === it.milestones.length - 1 ? 0 : 20 }}>
+                <span style={{ position: "absolute", left: 5, top: 2, width: 16, height: 16, borderRadius: 99, background: C.panel, border: `2px solid ${STATUS[m.status].c}`, boxShadow: m.status === "done" ? `0 0 0 3px ${STATUS[m.status].bg}` : "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {m.status === "done" && <span style={{ width: 6, height: 6, borderRadius: 99, background: STATUS[m.status].c }} />}
+                </span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{m.title}</div>
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.faint }}>{m.date}</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                  {Object.keys(STATUS).map(s => (
+                    <button key={s} onClick={() => setMilestoneStatus(p.id, it.id, m.id, s)} style={{
+                      cursor: "pointer", padding: "3px 9px", borderRadius: 6, fontSize: 10.5, fontFamily: MONO, fontWeight: 600,
+                      background: m.status === s ? STATUS[s].bg : "transparent",
+                      border: `1px solid ${m.status === s ? STATUS[s].c : C.borderSoft}`,
+                      color: m.status === s ? STATUS[s].c : C.faint,
+                    }}>{STATUS[s].ko}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 연결된 이슈 */}
+          <SectionTitle style={{ marginTop: 30 }}>연결된 이슈 ({linked.length})</SectionTitle>
+          <div style={{ marginTop: 12 }}>
+            {linked.length === 0 && <div style={{ fontSize: 13, color: C.faint }}>연결된 이슈가 없습니다.</div>}
+            {linked.map(i => (
+              <div key={i.id} style={{ padding: "11px 13px", background: C.panel2, borderRadius: 10, border: `1px solid ${C.borderSoft}`, marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{i.title}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: SEV[i.sev].c, fontWeight: 700 }}>{SEV[i.sev].ko}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, alignItems: "center" }}>
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.faint }}>담당 {i.owner} · ~{i.due}</span>
+                  <Pill s={i.status} map={ISSUE_STATUS} small />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================ 이슈 트래커
+function Issues({ issues, setIssues, filter, setFilter, showAdd, setShowAdd, partners, catByName = {} }) {
+  const filtered = filter === "all" ? issues : issues.filter(i => i.status === filter);
+  const order = { open: 0, in_progress: 1, resolved: 2 };
+  const sorted = [...filtered].sort((a, b) => order[a.status] - order[b.status] || ({ high: 0, medium: 1, low: 2 }[a.sev] - { high: 0, medium: 1, low: 2 }[b.sev]));
+
+  const cycle = (id) => setIssues(prev => prev.map(i => {
+    if (i.id !== id) return i;
+    const next = i.status === "open" ? "in_progress" : i.status === "in_progress" ? "resolved" : "open";
+    return { ...i, status: next };
+  }));
+  const remove = (id) => setIssues(prev => prev.filter(i => i.id !== id));
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["all", "전체"], ["open", "Open"], ["in_progress", "In Progress"], ["resolved", "Resolved"]].map(([v, l]) => (
+            <button key={v} onClick={() => setFilter(v)} style={{
+              cursor: "pointer", padding: "7px 14px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, fontFamily: MONO,
+              background: filter === v ? C.brandDim : "transparent",
+              border: `1px solid ${filter === v ? C.brand : C.border}`,
+              color: filter === v ? C.brand : C.faint,
+            }}>{l}</button>
+          ))}
+        </div>
+        <button onClick={() => setShowAdd(true)} style={{ cursor: "pointer", padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.brand, border: "none", color: "#06120f" }}>+ 이슈 등록</button>
+      </div>
+
+      <Panel style={{ overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "16px 1fr 130px 70px 90px 100px 40px", gap: 12, padding: "12px 18px", borderBottom: `1px solid ${C.border}`, fontFamily: MONO, fontSize: 10.5, color: C.faint, textTransform: "uppercase", letterSpacing: 0.5, alignItems: "center" }}>
+          <span></span><span>이슈</span><span>파트너</span><span>심각도</span><span>마감</span><span>상태</span><span></span>
+        </div>
+        {sorted.map(i => (
+          <div key={i.id} style={{ display: "grid", gridTemplateColumns: "16px 1fr 130px 70px 90px 100px 40px", gap: 12, padding: "14px 18px", borderBottom: `1px solid ${C.borderSoft}`, alignItems: "center" }}>
+            <span style={{ width: 9, height: 9, borderRadius: 99, background: SEV[i.sev].c, boxShadow: `0 0 7px ${SEV[i.sev].c}` }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{i.title}</div>
+              <div style={{ fontFamily: MONO, fontSize: 10.5, color: C.faint, marginTop: 2 }}>{i.item} · 담당 {i.owner}</div>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, color: C.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.partner}</div>
+              {catByName[i.partner] && GROUP_META[catByName[i.partner]] && (
+                <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, color: GROUP_META[catByName[i.partner]].c }}>
+                  {GROUP_META[catByName[i.partner]].label}
+                </span>
+              )}
+            </div>
+            <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: SEV[i.sev].c }}>{SEV[i.sev].ko}</span>
+            <span style={{ fontFamily: MONO, fontSize: 11.5, color: C.faint }}>{i.due.slice(5)}</span>
+            <button onClick={() => cycle(i.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }} title="클릭하여 상태 변경">
+              <Pill s={i.status} map={ISSUE_STATUS} small />
+            </button>
+            <button onClick={() => remove(i.id)} style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 14 }} title="삭제">✕</button>
+          </div>
+        ))}
+        {sorted.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>해당 조건의 이슈가 없습니다.</div>}
+      </Panel>
+
+      {showAdd && <AddIssue partners={partners} onClose={() => setShowAdd(false)} onAdd={(issue) => { setIssues(prev => [{ ...issue, id: "is" + Date.now() }, ...prev]); setShowAdd(false); }} />}
+    </div>
+  );
+}
+
+function AddIssue({ partners, onClose, onAdd }) {
+  const [f, setF] = useState({ partner: partners[0].name, item: partners[0].items[0].title, title: "", sev: "medium", owner: "", due: "" });
+  const curItems = partners.find(p => p.name === f.partner)?.items || [];
+  const inputS = { width: "100%", background: C.panel2, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", color: C.text, fontSize: 13, fontFamily: SANS, boxSizing: "border-box" };
+  const lbl = { fontFamily: MONO, fontSize: 10.5, color: C.faint, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(4,6,10,0.6)", backdropFilter: "blur(3px)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <Panel style={{ width: "min(460px, 100%)", padding: 26 }} >
+        <div onClick={e => e.stopPropagation()}>
+          <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 20 }}>이슈 등록</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <label style={lbl}>이슈 내용</label>
+              <input style={inputS} value={f.title} placeholder="예: 특정 모델에서 HDR 메타데이터 누락" onChange={e => setF({ ...f, title: e.target.value })} />
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>파트너</label>
+                <select style={inputS} value={f.partner} onChange={e => { const np = partners.find(p => p.name === e.target.value); setF({ ...f, partner: e.target.value, item: np.items[0].title }); }}>
+                  {partners.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>심각도</label>
+                <select style={inputS} value={f.sev} onChange={e => setF({ ...f, sev: e.target.value })}>
+                  <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={lbl}>협력 Item</label>
+              <select style={inputS} value={f.item} onChange={e => setF({ ...f, item: e.target.value })}>
+                {curItems.map(it => <option key={it.id} value={it.title}>{it.title}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>담당자</label>
+                <input style={inputS} value={f.owner} placeholder="이름" onChange={e => setF({ ...f, owner: e.target.value })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>마감일</label>
+                <input style={inputS} type="date" value={f.due} onChange={e => setF({ ...f, due: e.target.value })} />
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+            <button onClick={onClose} style={{ cursor: "pointer", padding: "9px 16px", borderRadius: 8, background: "transparent", border: `1px solid ${C.border}`, color: C.sub, fontSize: 13, fontWeight: 600 }}>취소</button>
+            <button onClick={() => f.title && f.owner && f.due && onAdd({ ...f, status: "open" })} style={{ cursor: "pointer", padding: "9px 18px", borderRadius: 8, background: C.brand, border: "none", color: "#06120f", fontSize: 13, fontWeight: 700, opacity: (f.title && f.owner && f.due) ? 1 : 0.5 }}>등록</button>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+// ============================================================ 마일스톤 타임라인
+function Timeline({ partners }) {
+  const months = ["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  const monthIdx = (d) => months.indexOf(d.slice(0, 7));
+  const grid = `220px repeat(${months.length}, 1fr)`;
+  const groups = GROUP_ORDER
+    .map(g => ({ g, meta: GROUP_META[g], rows: partners.filter(p => p.group === g).flatMap(p => p.items.map(it => ({ partner: p.name, ...it }))) }))
+    .filter(x => x.rows.length > 0);
+
+  return (
+    <Panel style={{ padding: 22, overflowX: "auto" }}>
+      <SectionTitle>카테고리별 마일스톤 타임라인 (2026)</SectionTitle>
+      <div style={{ minWidth: 760, marginTop: 18 }}>
+        {/* 월 헤더 */}
+        <div style={{ display: "grid", gridTemplateColumns: grid, borderBottom: `1px solid ${C.border}`, paddingBottom: 8 }}>
+          <span />
+          {months.map(m => <span key={m} style={{ fontFamily: MONO, fontSize: 11, color: C.faint, textAlign: "center" }}>{m.slice(5)}월</span>)}
+        </div>
+
+        {groups.map(({ g, meta, rows }) => (
+          <div key={g}>
+            {/* 카테고리 밴드 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0 6px" }}>
+              <span style={{ width: 9, height: 9, borderRadius: 2, background: meta.c, boxShadow: `0 0 8px ${meta.c}` }} />
+              <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, letterSpacing: 1.2, color: meta.c }}>{meta.label}</span>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, color: C.faint }}>{rows.length} item</span>
+              <div style={{ flex: 1, height: 1, background: C.borderSoft }} />
+            </div>
+            {rows.map((r, ri) => (
+              <div key={ri} style={{ display: "grid", gridTemplateColumns: grid, alignItems: "center", padding: "14px 0", borderBottom: `1px solid ${C.borderSoft}`, position: "relative" }}>
+                <div style={{ paddingRight: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.title}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 10.5, color: C.faint }}>{r.partner}</div>
+                </div>
+                {months.map((m, mi) => (
+                  <div key={mi} style={{ position: "relative", height: 30, borderLeft: `1px dashed ${C.borderSoft}` }} />
+                ))}
+                {r.milestones.map(ms => {
+                  const idx = monthIdx(ms.date);
+                  if (idx < 0) return null;
+                  const day = Number(ms.date.slice(8, 10));
+                  const left = `calc(220px + (${idx} + ${day / 31}) * ((100% - 220px) / ${months.length}))`;
+                  return (
+                    <div key={ms.id} title={`${ms.title} (${ms.date})`} style={{
+                      position: "absolute", left, top: "50%", transform: "translate(-50%,-50%)",
+                      width: 14, height: 14, borderRadius: 99, background: STATUS[ms.status].c,
+                      border: `2px solid ${C.panel}`, boxShadow: `0 0 8px ${STATUS[ms.status].c}aa`, cursor: "pointer", zIndex: 2,
+                    }} />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
+        {Object.keys(STATUS).map(k => (
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 99, background: STATUS[k].c }} />
+            <span style={{ fontSize: 12, color: C.sub }}>{STATUS[k].ko}</span>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ---------- 공통 ----------
+function SectionTitle({ children, style }) {
+  return <div style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, letterSpacing: 1, color: C.sub, textTransform: "uppercase", ...style }}>{children}</div>;
+}
+
+function FontStyles() {
+  return (
+    <style>{`
+      @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+      * { box-sizing: border-box; }
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: ${C.bg}; }
+      ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 6px; }
+      @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      input[type=range] { height: 4px; border-radius: 4px; }
+      select option { background: ${C.panel2}; }
+    `}</style>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
